@@ -22,6 +22,9 @@ nsx_data_vars = {
     IP_pool_name_LB ="tf-K8S-LB-Pool"
     IP_pool_cidr_LB ="10.190.37.0/24"
     IP_pool_range_LB ="10.190.37.100-10.190.37.200"
+
+    FW_section_top ="K8s-FW-top"
+    FW_section_bottom ="K8s-FW-bottom"
 }
 
 vSphere = {
