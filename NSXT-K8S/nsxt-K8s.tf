@@ -178,6 +178,22 @@ resource "nsxt_ip_pool" "ip_pool_lb" {
   }
 }
 
+resource "nsxt_firewall_section" "firewall_sect_top" {
+  description  = "FS Top provisioned by Terraform"
+  display_name = "${var.nsx_data_vars["FW_section_top"]}"
+
+  section_type = "LAYER3"
+  stateful     = true
+  depends_on = ["nsxt_firewall_section.firewall_sect_bottom"]
+}
+resource "nsxt_firewall_section" "firewall_sect_bottom" {
+  description  = "FS Bottom provisioned by Terraform"
+  display_name = "${var.nsx_data_vars["FW_section_bottom"]}"
+
+  section_type = "LAYER3"
+  stateful     = true
+}
+
 # vSphere part
 
 provider "vsphere" {
@@ -262,6 +278,7 @@ resource "vsphere_virtual_machine" "vm" {
       ipv4_gateway = "${var.vSphere["K8s-master-vm-ipv4_gateway"]}"
     }
   }
-  wait_for_guest_net_timeout = 0
+
+  # wait_for_guest_net_timeout = 0
 
 }
