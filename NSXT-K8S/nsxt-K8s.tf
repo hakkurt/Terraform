@@ -22,7 +22,6 @@ data "nsxt_switching_profile" "qos_profile" {
   display_name = "nsx-default-qos-switching-profile"
 }
 
-
 # Create Logical Switches
 resource "nsxt_logical_switch" "tf-EdgeUL" {
   admin_state       = "UP"
@@ -83,19 +82,6 @@ resource "nsxt_logical_tier1_router" "tier1_router" {
   advertise_connected_routes  = true 
 }
 
-resource "nsxt_logical_router_link_port_on_tier0" "link_port_tier0_UL1" {
-  description       = "T0 Uplink Port provisioned by Terraform"
-  display_name      = "Uplink1Edge1"
-  logical_router_id = "${nsxt_logical_tier0_router.tier0_router.id}"
-        
-}
-
-resource "nsxt_logical_router_link_port_on_tier0" "link_port_tier0_UL2" {
-  description       = "T0 Uplink Port provisioned by Terraform"
-  display_name      = "Uplink1Edge2"
-  logical_router_id = "${nsxt_logical_tier0_router.tier0_router.id}"
-        
-}
 
 resource "nsxt_logical_router_link_port_on_tier0" "link_port_tier0" {
   description       = "T0 Port provisioned by Terraform"
@@ -270,15 +256,67 @@ resource "vsphere_virtual_machine" "vm" {
       network_interface {
         ipv4_address = "${var.vSphere["K8s-master-vm-ipv4_address"]}"
         ipv4_netmask = "${var.vSphere["K8s-master-vm-ipv4_netmask"]}"
+        dns_server_list = "${var.dns_server_list}"
       }
+
+        ipv4_gateway = "${var.vSphere["K8s-master-vm-ipv4_gateway"]}"
 
       network_interface {
       }
-
-      ipv4_gateway = "${var.vSphere["K8s-master-vm-ipv4_gateway"]}"
+      
     }
   }
 
   # wait_for_guest_net_timeout = 0
+
+connection {
+	type = "ssh",
+	agent = "false"
+	host = "${var.vSphere["K8s-master-vm-ipv4_address"]}"
+  # host = "10.190.4.220"
+    
+	user = "root"
+	password = "VMware123!"	
+    }
+
+provisioner "remote-exec" {
+	inline = [
+	    "hostname ${var.vSphere["K8s-master-vm"]}",        
+	    "echo '${var.vSphere["K8s-master-vm"]}' >> /etc/hostname",
+      "echo '${var.vSphere["K8s-master-vm-ipv4_address"]} ${var.vSphere["K8s-master-vm"]}' >> /etc/hosts",
+      "echo 'nameserver ${var.dns_server_list[0]}' >> /etc/resolv.conf",
+      # "echo '1' > /proc/sys/net/ipv4/ip_forward",
+	    "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -",
+      "add-apt-repository 'deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable'",
+	    "apt-get update",
+      "apt-get install -y docker-ce",
+      "apt-get update && apt-get install -y apt-transport-https curl",
+      "curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -",
+      "cat <<EOF >/etc/apt/sources.list.d/kubernetes.list",
+      "deb https://apt.kubernetes.io/ kubernetes-xenial main",
+      "EOF",
+      "apt-get update",
+      "apt-get install -y kubelet kubeadm kubectl",
+      "apt-get install -y python2.7 python-pip python-dev python-six build-essential dkms",
+      "cd /nsx-container-2.4.1.13515827/OpenvSwitch/xenial_amd64/",
+      "dpkg -i libopenvswitch_2.10.2.13185890-1_amd64.deb",
+      "dpkg -i openvswitch-common_2.10.2.13185890-1_amd64.deb",
+      "dpkg -i openvswitch-datapath-dkms_2.10.2.13185890-1_all.deb",
+      "dpkg -i openvswitch-switch_2.10.2.13185890-1_amd64.deb",
+      "systemctl force-reload openvswitch-switch",
+      "ovs-vsctl add-br br-int",
+      "ovs-vsctl add-port br-int ens192 -- set Interface ens192 ofport_request=1",
+      "echo 'auto ens192 \n iface ens192 inet manual' >> /etc/network/interfaces",
+      "ifup ens192",
+      "swapoff -a",
+      "cd /nsx-container-2.4.1.13515827/Kubernetes/ubuntu_amd64/",
+      "dpkg --force-confold -i nsx-cni_2.4.1.13515827_amd64.deb",
+      "kubeadm init",
+      "mkdir -p $HOME/.kube",
+      "sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config",
+      "sudo chown $(id -u):$(id -g) $HOME/.kube/config",
+        
+	]
+    }
 
 }
