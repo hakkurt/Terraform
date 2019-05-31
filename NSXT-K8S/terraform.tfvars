@@ -37,12 +37,14 @@ vSphere = {
   cluster ="ClusterC"
   template ="ubuntutemplate"
   K8s-master-vm = "tf-K8s-master"
-  K8s-master-vm-ipv4_address = "10.190.5.50"
+  K8s-master-vm-ipv4_address = "10.190.16.50"
   K8s-master-vm-ipv4_netmask = "24"
-  K8s-master-vm-ipv4_gateway = "10.190.5.1"
+  K8s-master-vm-ipv4_gateway = "10.190.16.1"
   K8s-node1-vm = "tf-K8s-node1"
   K8s-node2-vm = "tf-K8s-node2"
 
   domain="demo.local"
 
 }
+
+dns_server_list = ["192.168.1.185", "8.8.8.8"]
