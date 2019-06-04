@@ -5,7 +5,6 @@ provider "nsxt" {
     allow_unverified_ssl = true
 }
 
-# Constant Parameters
 data "nsxt_transport_zone" "overlay_transport_zone" {
   display_name = "${var.nsx_data_vars["transport_zone_overlay"]}"
 }
@@ -81,7 +80,6 @@ resource "nsxt_logical_tier1_router" "tier1_router" {
   enable_router_advertisement = true
   advertise_connected_routes  = true 
 }
-
 
 resource "nsxt_logical_router_link_port_on_tier0" "link_port_tier0" {
   description       = "T0 Port provisioned by Terraform"
@@ -223,7 +221,7 @@ data "vsphere_network" "K8SNodeDataPlaneLS" {
   depends_on = ["nsxt_logical_switch.tf-K8SNodeDataPlaneLS"]
 }
 
-resource "vsphere_virtual_machine" "vm" {
+resource "vsphere_virtual_machine" "K8s-master-vm" {
   name             = "${var.vSphere["K8s-master-vm"]}"
   resource_pool_id = "${data.vsphere_compute_cluster.cluster.resource_pool_id}"
   datastore_id     = "${data.vsphere_datastore.datastore.id}"
@@ -273,16 +271,15 @@ connection {
 	type = "ssh",
 	agent = "false"
 	host = "${var.vSphere["K8s-master-vm-ipv4_address"]}"
-  # host = "10.190.4.220"
-    
-	user = "root"
-	password = "VMware123!"	
+      
+	user = "${var.vSphere["OS_user"]}"
+	password = "${var.vSphere["OS_password"]}"
     }
 
 provisioner "remote-exec" {
 	inline = [
 	    "hostname ${var.vSphere["K8s-master-vm"]}",        
-	    "echo '${var.vSphere["K8s-master-vm"]}' >> /etc/hostname",
+	    "echo '${var.vSphere["K8s-master-vm"]}' > /etc/hostname",
       "echo '${var.vSphere["K8s-master-vm-ipv4_address"]} ${var.vSphere["K8s-master-vm"]}' >> /etc/hosts",
       "echo 'nameserver ${var.dns_server_list[0]}' >> /etc/resolv.conf",
       # "echo '1' > /proc/sys/net/ipv4/ip_forward",
@@ -308,15 +305,209 @@ provisioner "remote-exec" {
       "ovs-vsctl add-port br-int ens192 -- set Interface ens192 ofport_request=1",
       "echo 'auto ens192 \n iface ens192 inet manual' >> /etc/network/interfaces",
       "ifup ens192",
-      "swapoff -a",
-      "cd /nsx-container-2.4.1.13515827/Kubernetes/ubuntu_amd64/",
-      "dpkg --force-confold -i nsx-cni_2.4.1.13515827_amd64.deb",
+      "swapoff -a",     
       "kubeadm init",
       "mkdir -p $HOME/.kube",
       "sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config",
-      "sudo chown $(id -u):$(id -g) $HOME/.kube/config"
-        
-	]
+      "sudo chown $(id -u):$(id -g) $HOME/.kube/config",
+      "mkdir /var/www",
+      "kubeadm token create --print-join-command > /var/www/K8sjoin.txt",
+      "docker run -d -p 80:80 -v /var/www:/usr/share/nginx/html nginx",
+      #"cd /nsx-container-2.4.1.13515827/Kubernetes/ubuntu_amd64/",
+      #"dpkg -i nsx-cni_2.4.1.13515827_amd64.deb",
+      ]
+    }
+}
+
+
+resource "vsphere_virtual_machine" "K8s-node1-vm" {
+  name             = "${var.vSphere["K8s-node1-vm"]}"
+  resource_pool_id = "${data.vsphere_compute_cluster.cluster.resource_pool_id}"
+  datastore_id     = "${data.vsphere_datastore.datastore.id}"
+
+  num_cpus = 2
+  memory   = 2048
+  guest_id = "ubuntu64Guest"
+
+  network_interface {
+    network_id = "${data.vsphere_network.K8SNodeManagementPlaneLS.id}"
+  }
+    network_interface {
+    network_id = "${data.vsphere_network.K8SNodeDataPlaneLS.id}"
+  }
+  disk {
+    label            = "disk0"
+    size             = "${data.vsphere_virtual_machine.template.disks.0.size}"
+    eagerly_scrub    = "${data.vsphere_virtual_machine.template.disks.0.eagerly_scrub}"
+    thin_provisioned = "${data.vsphere_virtual_machine.template.disks.0.thin_provisioned}"
+  }
+  clone {
+    template_uuid = "${data.vsphere_virtual_machine.template.id}"
+
+    customize {
+      linux_options {
+        host_name = "${var.vSphere["K8s-node1-vm"]}"
+        domain    = "${var.vSphere["domain"]}"
+      }
+
+      network_interface {
+        ipv4_address = "${var.vSphere["K8s-node1-vm-ipv4_address"]}"
+        ipv4_netmask = "${var.vSphere["K8s-node1-vm-ipv4_netmask"]}"
+        dns_server_list = "${var.dns_server_list}"
+      }
+
+        ipv4_gateway = "${var.vSphere["K8s-node1-vm-ipv4_gateway"]}"
+
+      network_interface {
+      }
+      
+    }
+  }
+
+  # wait_for_guest_net_timeout = 0
+
+connection {
+	type = "ssh",
+	agent = "false"
+	host = "${var.vSphere["K8s-node1-vm-ipv4_address"]}"
+      
+	user = "${var.vSphere["OS_user"]}"
+	password = "${var.vSphere["OS_password"]}"
     }
 
+provisioner "remote-exec" {
+	inline = [
+	    "hostname ${var.vSphere["K8s-node1-vm"]}",
+	    "echo '${var.vSphere["K8s-node1-vm"]}' > /etc/hostname",
+      "echo '${var.vSphere["K8s-node1-vm-ipv4_address"]} ${var.vSphere["K8s-node1-vm"]}' >> /etc/hosts",
+      "echo 'nameserver ${var.dns_server_list[0]}' >> /etc/resolv.conf",
+      # "echo '1' > /proc/sys/net/ipv4/ip_forward",
+	    "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -",
+      "add-apt-repository 'deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable'",
+      "apt-get update",
+      "apt-get install -y docker-ce",
+      "apt-get update && apt-get install -y apt-transport-https curl",
+      "curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -",
+      "cat <<EOF >/etc/apt/sources.list.d/kubernetes.list",
+      "deb https://apt.kubernetes.io/ kubernetes-xenial main",
+      "EOF",
+      "apt-get update",
+      "apt-get install -y kubelet kubeadm kubectl",
+      "apt-get install -y python2.7 python-pip python-dev python-six build-essential dkms",
+      "cd /nsx-container-2.4.1.13515827/OpenvSwitch/xenial_amd64/",
+      "dpkg -i libopenvswitch_2.10.2.13185890-1_amd64.deb",
+      "dpkg -i openvswitch-common_2.10.2.13185890-1_amd64.deb",
+      "dpkg -i openvswitch-datapath-dkms_2.10.2.13185890-1_all.deb",
+      "dpkg -i openvswitch-switch_2.10.2.13185890-1_amd64.deb",
+      "systemctl force-reload openvswitch-switch",
+      "ovs-vsctl add-br br-int",
+      "ovs-vsctl add-port br-int ens192 -- set Interface ens192 ofport_request=1",
+      "echo 'auto ens192 \n iface ens192 inet manual' >> /etc/network/interfaces",
+      "ifup ens192",
+      "swapoff -a",
+      "wget http://'${var.vSphere["K8s-master-vm-ipv4_address"]}'/K8sjoin.txt",      
+      "sh K8sjoin.txt",
+      #"cd /nsx-container-2.4.1.13515827/Kubernetes/ubuntu_amd64/",
+      #"dpkg -i nsx-cni_2.4.1.13515827_amd64.deb",      
+      ]
+    }
+
+    depends_on = ["vsphere_virtual_machine.K8s-master-vm"]    
 }
+
+
+resource "vsphere_virtual_machine" "K8s-node2-vm" {
+  name             = "${var.vSphere["K8s-node2-vm"]}"
+  resource_pool_id = "${data.vsphere_compute_cluster.cluster.resource_pool_id}"
+  datastore_id     = "${data.vsphere_datastore.datastore.id}"
+
+  num_cpus = 2
+  memory   = 2048
+  guest_id = "ubuntu64Guest"
+
+  network_interface {
+    network_id = "${data.vsphere_network.K8SNodeManagementPlaneLS.id}"
+  }
+    network_interface {
+    network_id = "${data.vsphere_network.K8SNodeDataPlaneLS.id}"
+  }
+  disk {
+    label            = "disk0"
+    size             = "${data.vsphere_virtual_machine.template.disks.0.size}"
+    eagerly_scrub    = "${data.vsphere_virtual_machine.template.disks.0.eagerly_scrub}"
+    thin_provisioned = "${data.vsphere_virtual_machine.template.disks.0.thin_provisioned}"
+  }
+  clone {
+    template_uuid = "${data.vsphere_virtual_machine.template.id}"
+
+    customize {
+      linux_options {
+        host_name = "${var.vSphere["K8s-node2-vm"]}"
+        domain    = "${var.vSphere["domain"]}"
+      }
+
+      network_interface {
+        ipv4_address = "${var.vSphere["K8s-node2-vm-ipv4_address"]}"
+        ipv4_netmask = "${var.vSphere["K8s-node2-vm-ipv4_netmask"]}"
+        dns_server_list = "${var.dns_server_list}"
+      }
+
+        ipv4_gateway = "${var.vSphere["K8s-node2-vm-ipv4_gateway"]}"
+
+      network_interface {
+      }
+      
+    }
+  }
+
+  #wait_for_guest_net_timeout = 0
+
+connection {
+	type = "ssh",
+	agent = "false"
+	host = "${var.vSphere["K8s-node2-vm-ipv4_address"]}"
+      
+	user = "${var.vSphere["OS_user"]}"
+	password = "${var.vSphere["OS_password"]}"
+    }
+
+provisioner "remote-exec" {
+	inline = [
+	    "hostname ${var.vSphere["K8s-node2-vm"]}",        
+	    "echo '${var.vSphere["K8s-node2-vm"]}' > /etc/hostname",
+      "echo '${var.vSphere["K8s-node2-vm-ipv4_address"]} ${var.vSphere["K8s-node2-vm"]}' >> /etc/hosts",
+      "echo 'nameserver ${var.dns_server_list[0]}' >> /etc/resolv.conf",
+      # "echo '1' > /proc/sys/net/ipv4/ip_forward",
+	    "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -",
+      "add-apt-repository 'deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable'",
+      "apt-get update",
+      "apt-get install -y docker-ce",
+      "apt-get update && apt-get install -y apt-transport-https curl",
+      "curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -",
+      "cat <<EOF >/etc/apt/sources.list.d/kubernetes.list",
+      "deb https://apt.kubernetes.io/ kubernetes-xenial main",
+      "EOF",
+      "apt-get update",
+      "apt-get install -y kubelet kubeadm kubectl",
+      "apt-get install -y python2.7 python-pip python-dev python-six build-essential dkms",
+      "cd /nsx-container-2.4.1.13515827/OpenvSwitch/xenial_amd64/",
+      "dpkg -i libopenvswitch_2.10.2.13185890-1_amd64.deb",
+      "dpkg -i openvswitch-common_2.10.2.13185890-1_amd64.deb",
+      "dpkg -i openvswitch-datapath-dkms_2.10.2.13185890-1_all.deb",
+      "dpkg -i openvswitch-switch_2.10.2.13185890-1_amd64.deb",
+      "systemctl force-reload openvswitch-switch",
+      "ovs-vsctl add-br br-int",
+      "ovs-vsctl add-port br-int ens192 -- set Interface ens192 ofport_request=1",
+      "echo 'auto ens192 \n iface ens192 inet manual' >> /etc/network/interfaces",
+      "ifup ens192",
+      "swapoff -a",
+      "wget http://'${var.vSphere["K8s-master-vm-ipv4_address"]}'/K8sjoin.txt",      
+      "sh K8sjoin.txt",
+      #"cd /nsx-container-2.4.1.13515827/Kubernetes/ubuntu_amd64/",
+      #"dpkg -i nsx-cni_2.4.1.13515827_amd64.deb",
+      ]
+    }
+    depends_on = ["vsphere_virtual_machine.K8s-master-vm"]    
+}
+
+
