@@ -14,8 +14,9 @@ data "nsxt_transport_zone" "edge_vlan_transport_zone" {
 }
 
 data "nsxt_edge_cluster" "edge_cluster" {
-  display_name = "${var.nsx_data_vars["edge_cluster"]}"
+  display_name = "${var.nsx_data_vars["edge_cluster_name"]}"
 }
+
 
 data "nsxt_switching_profile" "qos_profile" {
   display_name = "nsx-default-qos-switching-profile"
@@ -122,12 +123,6 @@ resource "nsxt_ip_block" "ip_block" {
     scope = "${var.nsx_data_vars["scope"]}"
     tag   = "${var.nsx_data_vars["tag"]}"
   }
-}
-
-resource "nsxt_ip_block_subnet" "ip_block_subnet" {
-  description = "ip_block_subnet"
-  block_id    = "${nsxt_ip_block.ip_block.id}"
-  size        = 16
 }
 
 resource "nsxt_ip_pool" "ip_pool_nat" {
@@ -281,8 +276,7 @@ provisioner "remote-exec" {
 	    "hostname ${var.vSphere["K8s-master-vm"]}",        
 	    "echo '${var.vSphere["K8s-master-vm"]}' > /etc/hostname",
       "echo '${var.vSphere["K8s-master-vm-ipv4_address"]} ${var.vSphere["K8s-master-vm"]}' >> /etc/hosts",
-      "echo 'nameserver ${var.dns_server_list[0]}' >> /etc/resolv.conf",
-      # "echo '1' > /proc/sys/net/ipv4/ip_forward",
+      "echo 'nameserver ${var.dns_server_list[0]}' >> /etc/resolv.conf",      
 	    "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -",
       "add-apt-repository 'deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable'",
       "apt-get update",
@@ -313,11 +307,36 @@ provisioner "remote-exec" {
       "mkdir /var/www",
       "kubeadm token create --print-join-command > /var/www/K8sjoin.txt",
       "docker run -d -p 80:80 -v /var/www:/usr/share/nginx/html nginx",
-      #"cd /nsx-container-2.4.1.13515827/Kubernetes/ubuntu_amd64/",
-      #"dpkg -i nsx-cni_2.4.1.13515827_amd64.deb",
+      "cd /nsx-container-2.4.1.13515827/Kubernetes/ubuntu_amd64/",
+      "dpkg -i nsx-cni_2.4.1.13515827_amd64.deb",
+      "cd /nsx-container-2.4.1.13515827/Kubernetes/",
+      "docker load -i nsx-ncp-ubuntu-2.4.1.13515827.tar",
+      "docker tag registry.local/2.4.1.13515827/nsx-ncp-ubuntu:latest nsx-ncp:latest",
+      "kubectl create -f https://raw.githubusercontent.com/hakkurt/Terraform/master/NSXT-K8S/YAML/nsx-ncp-rbac.yml",
+      "wget https://raw.githubusercontent.com/hakkurt/Terraform/master/NSXT-K8S/YAML/ncp-deployment-custom.yml",
+      "sed -i 's/10.190.16.50/${var.vSphere["K8s-master-vm-ipv4_address"]}/g' ncp-deployment-custom.yml",
+      "sed -i 's/k8scluster2/${var.nsx_data_vars["scope"]}/g' ncp-deployment-custom.yml",
+      "sed -i 's/10.190.1.80/${var.nsx["ip"]}/g' ncp-deployment-custom.yml",
+      "sed -i 's/VMware123!VMware123!/${var.nsx["password"]}/g' ncp-deployment-custom.yml",
+      "sed -i 's/tf-T0-K8S-Domain/${var.nsx_data_vars["t0_router_name"]}/g' ncp-deployment-custom.yml",
+      "sed -i 's/tf-K8S-POD-IP-BLOCK/${var.nsx_data_vars["IP_block_name"]}/g' ncp-deployment-custom.yml",
+      "sed -i 's/tf-K8S-NAT-Pool/${var.nsx_data_vars["IP_pool_name_nat"]}/g' ncp-deployment-custom.yml",
+      "sed -i 's/tf-K8S-LB-Pool/${var.nsx_data_vars["IP_pool_name_LB"]}/g' ncp-deployment-custom.yml",
+      "sed -i 's/K8s-FW-top/${var.nsx_data_vars["FW_section_top"]}/g' ncp-deployment-custom.yml",
+      "sed -i 's/K8s-FW-bottom/${var.nsx_data_vars["FW_section_bottom"]}/g' ncp-deployment-custom.yml",
+      "kubectl create -f ncp-deployment-custom.yml --namespace=nsx-system",
+      "wget https://raw.githubusercontent.com/hakkurt/Terraform/master/NSXT-K8S/YAML/nsx-node-agent-ds.yml",
+      "sed -i 's/10.190.16.50/${var.vSphere["K8s-master-vm-ipv4_address"]}/g' nsx-node-agent-ds-custom.yml",
+      "until kubectl get nodes | grep -q ${var.vSphere["K8s-node2-vm"]}",
+      "do",
+      "sleep 1;",
+      "done",
+      "kubectl create -f nsx-node-agent-ds-custom.yml --namespace=nsx-system",
+
       ]
     }
-}
+
+  }
 
 
 resource "vsphere_virtual_machine" "K8s-node1-vm" {
@@ -380,8 +399,7 @@ provisioner "remote-exec" {
 	    "hostname ${var.vSphere["K8s-node1-vm"]}",
 	    "echo '${var.vSphere["K8s-node1-vm"]}' > /etc/hostname",
       "echo '${var.vSphere["K8s-node1-vm-ipv4_address"]} ${var.vSphere["K8s-node1-vm"]}' >> /etc/hosts",
-      "echo 'nameserver ${var.dns_server_list[0]}' >> /etc/resolv.conf",
-      # "echo '1' > /proc/sys/net/ipv4/ip_forward",
+      "echo 'nameserver ${var.dns_server_list[0]}' >> /etc/resolv.conf",      
 	    "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -",
       "add-apt-repository 'deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable'",
       "apt-get update",
@@ -405,14 +423,18 @@ provisioner "remote-exec" {
       "echo 'auto ens192 \n iface ens192 inet manual' >> /etc/network/interfaces",
       "ifup ens192",
       "swapoff -a",
-      "wget http://'${var.vSphere["K8s-master-vm-ipv4_address"]}'/K8sjoin.txt",      
+      "wget --tries=0 --retry-connrefused http://'${var.vSphere["K8s-master-vm-ipv4_address"]}'/K8sjoin.txt",      
       "sh K8sjoin.txt",
-      #"cd /nsx-container-2.4.1.13515827/Kubernetes/ubuntu_amd64/",
-      #"dpkg -i nsx-cni_2.4.1.13515827_amd64.deb",      
+      "cd /nsx-container-2.4.1.13515827/Kubernetes/",
+      "docker load -i nsx-ncp-ubuntu-2.4.1.13515827.tar",
+      "docker tag registry.local/2.4.1.13515827/nsx-ncp-ubuntu:latest nsx-ncp:latest",
+      "cd /nsx-container-2.4.1.13515827/Kubernetes/ubuntu_amd64/",
+      "dpkg -i nsx-cni_2.4.1.13515827_amd64.deb",
+      
       ]
     }
 
-    depends_on = ["vsphere_virtual_machine.K8s-master-vm"]    
+    # depends_on = ["vsphere_virtual_machine.K8s-master-vm"]    
 }
 
 
@@ -476,8 +498,7 @@ provisioner "remote-exec" {
 	    "hostname ${var.vSphere["K8s-node2-vm"]}",        
 	    "echo '${var.vSphere["K8s-node2-vm"]}' > /etc/hostname",
       "echo '${var.vSphere["K8s-node2-vm-ipv4_address"]} ${var.vSphere["K8s-node2-vm"]}' >> /etc/hosts",
-      "echo 'nameserver ${var.dns_server_list[0]}' >> /etc/resolv.conf",
-      # "echo '1' > /proc/sys/net/ipv4/ip_forward",
+      "echo 'nameserver ${var.dns_server_list[0]}' >> /etc/resolv.conf",      
 	    "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -",
       "add-apt-repository 'deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable'",
       "apt-get update",
@@ -501,13 +522,16 @@ provisioner "remote-exec" {
       "echo 'auto ens192 \n iface ens192 inet manual' >> /etc/network/interfaces",
       "ifup ens192",
       "swapoff -a",
-      "wget http://'${var.vSphere["K8s-master-vm-ipv4_address"]}'/K8sjoin.txt",      
+      "wget --tries=0 --retry-connrefused http://'${var.vSphere["K8s-master-vm-ipv4_address"]}'/K8sjoin.txt",      
       "sh K8sjoin.txt",
-      #"cd /nsx-container-2.4.1.13515827/Kubernetes/ubuntu_amd64/",
-      #"dpkg -i nsx-cni_2.4.1.13515827_amd64.deb",
+      "cd /nsx-container-2.4.1.13515827/Kubernetes/",
+      "docker load -i nsx-ncp-ubuntu-2.4.1.13515827.tar",
+      "docker tag registry.local/2.4.1.13515827/nsx-ncp-ubuntu:latest nsx-ncp:latest",
+      "cd /nsx-container-2.4.1.13515827/Kubernetes/ubuntu_amd64/",
+      "dpkg -i nsx-cni_2.4.1.13515827_amd64.deb",
       ]
     }
-    depends_on = ["vsphere_virtual_machine.K8s-master-vm"]    
+    # depends_on = ["vsphere_virtual_machine.K8s-master-vm"]    
 }
 
 
