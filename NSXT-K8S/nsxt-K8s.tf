@@ -326,12 +326,12 @@ provisioner "remote-exec" {
       "sed -i 's/K8s-FW-bottom/${var.nsx_data_vars["FW_section_bottom"]}/g' ncp-deployment-custom.yml",
       "kubectl create -f ncp-deployment-custom.yml --namespace=nsx-system",
       "wget https://raw.githubusercontent.com/hakkurt/Terraform/master/NSXT-K8S/YAML/nsx-node-agent-ds.yml",
-      "sed -i 's/10.190.16.50/${var.vSphere["K8s-master-vm-ipv4_address"]}/g' nsx-node-agent-ds-custom.yml",
+      "sed -i 's/10.190.16.50/${var.vSphere["K8s-master-vm-ipv4_address"]}/g' nsx-node-agent-ds.yml",
       "until kubectl get nodes | grep -q ${var.vSphere["K8s-node2-vm"]}",
       "do",
       "sleep 1;",
       "done",
-      "kubectl create -f nsx-node-agent-ds-custom.yml --namespace=nsx-system",
+      "kubectl create -f nsx-node-agent-ds.yml --namespace=nsx-system",
 
       ]
     }
