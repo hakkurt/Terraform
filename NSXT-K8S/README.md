@@ -29,7 +29,7 @@ Prerequisites are as follows :
 6. All NSX-T firewall sections will be created
 7. Three (3) Virtual Machines will be deployed from vSphere template [one (1) for K8S master and two (2) for K8S nodes]
 8. All three (3) Ubuntu OS will be configured based on TF configuration file (terraform.tfvars)
-9. All necessary software packets will be deployed and configured (docker, K8s, NSX-T CNI Plugin, Open vSwitch)
+9. All necessary software packages will be deployed and configured (docker, K8s, NSX-T CNI Plugin, Open vSwitch)
 
 **Caution :**
 When 'dpkg -i nsx-cni_2.4.1.13515827_amd64.deb' command is executed, TF script shown as stuck, but in fact the script is running in the background and realising remaining steps. I could not find root cause for that. 
