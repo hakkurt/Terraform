@@ -15,7 +15,7 @@ Prerequisites are as follows :
    * Edge Transport Node
    * Edge Cluster
 2. Tier 0 Logical Router Uplink Interface Configuration is not supported by current NSX-T Terraform provider. This step should be done manually (https://github.com/dumlutimuralp/nsx-t-k8s/tree/master/Part%201#tier-0-logical-router-uplink-interface-configuration)
-3. Tier 0 BGP Configuration and route redistribution are not supported by current NSX-T Terraform provider. These steps should be done manually (https://github.com/dumlutimuralp/nsx-t-k8s/tree/master/Part%201#tier-0-bgp-configuration)
+3. Tier 0 BGP Configuration and route redistribution are not supported by current NSX-T Terraform provider. These steps should be done manually (https://github.com/dumlutimuralp/nsx-t-k8s/tree/master/Part%201#tier-0-bgp-configuration). Kubernetes nodes must be reachable from Terraform client machine. After Terraform deployed Tier 0 router, you should setup BGP to make Kubernetes nodes reachable from  Terraform client machine
 4. Base Ubuntu OS with 2 NICs should be installed. Root Login via SSH should be enabled
 5. NSX-T Container package should be dowloaded and copied to root directory of Ubuntu OS (https://github.com/dumlutimuralp/nsx-t-k8s/tree/master/Part%203#install-cni). After this step, Virtual machine should be converted to a template.
 6. Tagging existing NSX-T logical ports is not supported by current NSX-T Terraform provider. This step should be done manually (https://github.com/dumlutimuralp/nsx-t-k8s/blob/master/Part%203/README.md#tagging-nsx-t-objects-for-k8s)
